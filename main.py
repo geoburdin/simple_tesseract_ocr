@@ -8,10 +8,28 @@ IMAGE_SIZE = 1800
 BINARY_THREHOLD = 180
 
 def process_image_for_ocr(file_path):
-    # TODO : Implement using opencv
     temp_filename = set_image_dpi(file_path)
     im_new = remove_noise_and_smooth(temp_filename)
+    im_new = remove_underline(im_new)
     return im_new
+
+def remove_underline(img):
+    img = cv2.bitwise_not(img)
+
+    # (1) clean up noises
+    kernel_clean = np.ones((2,2),np.uint8)
+    cleaned = cv2.erode(img, kernel_clean, iterations=1)
+
+    # (2) Extract lines
+    kernel_line = np.ones((1, 10), np.uint8)
+    clean_lines = cv2.erode(img, kernel_line, iterations=5)
+    clean_lines = cv2.dilate(clean_lines, kernel_line, iterations=10)
+
+    # (3) Subtract lines
+    cleaned_img_without_lines = cleaned - clean_lines
+    cleaned_img_without_lines = cv2.bitwise_not(cleaned_img_without_lines)
+
+    return cleaned_img_without_lines
 
 def set_image_dpi(file_path):
     im = Image.open(file_path)
