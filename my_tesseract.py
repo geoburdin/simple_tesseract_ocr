@@ -4,8 +4,11 @@ import subprocess
 tesseract_cmd = 'tesseract'
 
 
-def run_tesseract(input_filename, output_filename_base,
-    extension, lang, config=''):
+def run_tesseract(input_filename,
+                  output_filename_base,
+                  extension,
+                  lang,
+                  config=''):
     cmd_args = []
 
     cmd_args += (tesseract_cmd, input_filename, output_filename_base)
@@ -28,8 +31,10 @@ def run_tesseract(input_filename, output_filename_base,
 
 import fitz
 
+
 def convert_pdf_to_image(pdf_input_path, jpeg_output_path):
     doc = fitz.open(pdf_input_path)
     for page in doc:  # iterate through the pages
-        pix = page.get_pixmap(matrix = fitz.Matrix(5, 5))  # render page to an image
-        pix.save(jpeg_output_path+"/page-%i.png" % page.number)
+        pix = page.get_pixmap(matrix=fitz.Matrix(5,
+                                                 5))  # render page to an image
+        pix.save(jpeg_output_path + "/page-%i.png" % page.number)

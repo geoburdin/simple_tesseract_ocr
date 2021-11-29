@@ -1,10 +1,12 @@
 import tempfile
+
 import cv2
 import numpy as np
 from PIL import Image
 
 IMAGE_SIZE = 1800
 BINARY_THREHOLD = 180
+
 
 def process_image_for_ocr(file_path):
     temp_filename = set_image_dpi(file_path)
@@ -25,6 +27,7 @@ def remove_underline(img):
 
     return cleaned_img_without_lines
 
+
 def set_image_dpi(file_path):
     im = Image.open(file_path)
     length_x, width_y = im.size
@@ -36,15 +39,19 @@ def set_image_dpi(file_path):
     im_resized.save(temp_filename, dpi=(600, 600))
     return temp_filename
 
+
 def image_smoothening(img):
     _, th1 = cv2.threshold(img, BINARY_THREHOLD, 255, cv2.THRESH_BINARY)
     blur = cv2.GaussianBlur(th1, (3, 3), 0)
     _, th2 = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return th2
 
+
 def remove_noise_and_smooth(file_name):
     img = cv2.imread(file_name, 0)
-    filtered = cv2.adaptiveThreshold(img.astype(np.uint8), 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 45, 3)
+    filtered = cv2.adaptiveThreshold(img.astype(np.uint8), 255,
+                                     cv2.ADAPTIVE_THRESH_MEAN_C,
+                                     cv2.THRESH_BINARY, 45, 3)
     kernel = np.ones((3, 3), np.uint8)
     opening = cv2.morphologyEx(filtered, cv2.MORPH_OPEN, kernel)
     closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
