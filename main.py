@@ -1,109 +1,66 @@
-import tempfile
-
+import os
+from prepare_image import process_image_for_ocr
+from my_tesseract import run_tesseract, convert_pdf_to_image
+from autocorrect import Speller
 import cv2
-import numpy as np
-from PIL import Image
+import click
+from glob import glob
 
-IMAGE_SIZE = 1800
-BINARY_THREHOLD = 180
-
-def process_image_for_ocr(file_path):
-    temp_filename = set_image_dpi(file_path)
-    im_new = remove_noise_and_smooth(temp_filename)
-    im_new = remove_underline(im_new)
-    return im_new
-
-def remove_underline(img):
-    img = cv2.bitwise_not(img)
-
-    # (1) clean up noises
-    kernel_clean = np.ones((2,2),np.uint8)
-    cleaned = cv2.erode(img, kernel_clean, iterations=1)
-
-    # (2) Extract lines
-    kernel_line = np.ones((1, 10), np.uint8)
-    clean_lines = cv2.erode(img, kernel_line, iterations=5)
-    clean_lines = cv2.dilate(clean_lines, kernel_line, iterations=10)
-
-    # (3) Subtract lines
-    cleaned_img_without_lines = cleaned - clean_lines
-    cleaned_img_without_lines = cv2.bitwise_not(cleaned_img_without_lines)
-
-    return cleaned_img_without_lines
-
-def set_image_dpi(file_path):
-    im = Image.open(file_path)
-    length_x, width_y = im.size
-    factor = max(1, int(IMAGE_SIZE / length_x))
-    size = factor * length_x, factor * width_y
-    # size = (1800, 1800)
-    im_resized = im.resize(size, Image.ANTIALIAS)
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
-    temp_filename = temp_file.name
-    im_resized.save(temp_filename, dpi=(300, 300))
-    return temp_filename
-
-def image_smoothening(img):
-    ret1, th1 = cv2.threshold(img, BINARY_THREHOLD, 255, cv2.THRESH_BINARY)
-    ret2, th2 = cv2.threshold(th1, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    blur = cv2.GaussianBlur(th2, (5, 5), 0)
-    ret3, th3 = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return th3
-
-def remove_noise_and_smooth(file_name):
-    img = cv2.imread(file_name, 0)
-    filtered = cv2.adaptiveThreshold(img.astype(np.uint8), 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 45, 3)
-    kernel = np.ones((3, 3), np.uint8)
-    opening = cv2.morphologyEx(filtered, cv2.MORPH_OPEN, kernel)
-    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
-    img = image_smoothening(img)
-    or_image = cv2.bitwise_or(img, closing)
-    return or_image
+@click.command()
+@click.option('--input', help='Input Filememe. Supported extensions: pdf, jpg, png, jpeg')
+@click.option('--output', default = 'result.txt', help='Filename for output: Supported extensions: txt, pdf, hocr')
+@click.option('--verbose', is_flag=True, help="Print more output.")
 
 
-img = process_image_for_ocr('samples/ocr_sample.png')
-cv2.imwrite('img.png', img)
+def pipeline(input, output, verbose):
+    import logging
 
-import shlex
-import subprocess
-import sys
-from pkgutil import find_loader
+    if verbose:
+        logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.DEBUG)
+        logging.info("Verbose output.")
+    else:
+        logging.basicConfig(format="%(levelname)s: %(message)s")
+
+    _, tail = os.path.split(input)
+    string_with_mistakes = ''
+    if tail[-4:] == '.pdf':
+        logging.info('Processing pdf file')
+        try:
+            os.mkdir('png_pages')
+            logging.warning('Created /png_pages/ folder with pages in png format')
+        except Exception as e:
+            logging.warning('/png_pages/ folder already created')
+            pass
+        convert_pdf_to_image('samples/2003.00744v1_image_pdf.pdf', 'png_pages')
+
+        for page in glob('png_pages/*.png'):
+            img = process_image_for_ocr(page)
+            cv2.imwrite('png_pages/{}.png'.format(page[:-4]), img)
+            logging.info('Page preprocessing is completed. Result: {}'.format(page))
+            run_tesseract('{}.png'.format(page[:-4]), 'output', lang='eng', extension='txt', config='--psm 3 --oem 3')
+            with open('output.txt', 'r+', encoding="utf8") as file:
+                string_with_mistakes += file.read()
+        logging.info('Processing pdf file is completed. Post-correction is starting')
+    elif tail[-4:] in ['.jpg','.png', '.jpeg']:
+        img = process_image_for_ocr(input)
+        cv2.imwrite('img.png', img)
+        logging.info('Page preprocessing is completed. Result: img.png')
+        run_tesseract('img.png', 'output', lang='eng', extension='txt', config='--psm 3 --oem 3')
+
+        with open('output.txt', 'r+', encoding="utf8") as file:
+            string_with_mistakes += '/n'+file.read()
+        logging.info('Processing input file is completed. Post-correction is starting')
+    else:
+        logging.error('Input file format is not supported. Supported extensions: pdf, jpg, png, jpeg')
+
+    with open(output, 'w+', encoding="utf8") as file:
+        spell = Speller()
+        string_without_mistakes = spell(string_with_mistakes)
+        file.write(string_without_mistakes)
+        logging.info('Post-proccesing is completed:')
+        logging.info(string_without_mistakes)
+        logging.warning('OCR is completed')
 
 
-try:
-    from PIL import Image
-except ImportError:
-    import Image
-
-
-tesseract_cmd = 'tesseract'
-
-numpy_installed = find_loader('numpy') is not None
-if numpy_installed:
-    from numpy import ndarray
-
-
-def run_tesseract(input_filename, output_filename_base,
-    extension, lang, config='', nice=0, timeout=0):
-    cmd_args = []
-
-    if not sys.platform.startswith('win32') and nice != 0:
-        cmd_args += ('nice', '-n', str(nice))
-
-    cmd_args += (tesseract_cmd, input_filename, output_filename_base)
-
-    if lang is not None:
-        cmd_args += ('-l', lang)
-
-    if config:
-        cmd_args += shlex.split(config)
-
-    if extension:
-        cmd_args.append(extension)
-
-    try:
-        proc = subprocess.Popen(cmd_args)
-    except OSError as e:
-        raise e
-
-run_tesseract('img.png', 'output', lang='eng', extension='hocr', config = '--psm 3 --oem 3')
+if __name__ == '__main__':
+    pipeline()
