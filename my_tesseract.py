@@ -1,7 +1,7 @@
 import shlex
 import subprocess
 
-tesseract_cmd = 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
+tesseract_cmd = 'tesseract'
 
 
 def run_tesseract(input_filename, output_filename_base,
